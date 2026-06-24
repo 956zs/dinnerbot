@@ -43,6 +43,7 @@ const recommendationMoodPool = [
 ];
 
 const genericFoodQuestions = new Set(["什麼", "甚麼", "什么", "啥", "哪個", "哪一個"]);
+const genericFoodQuestionPattern = /^(?:一點|點|些)?(?:什麼|甚麼|什么|啥)(?:東西)?$/u;
 const trailingNoisePattern = /[\s?？!！.。,，~～]+$/u;
 const fillerPattern = /[\s?？!！.。,，~～]*(嗎|啊|啦|吧|呢)+[\s?？!！.。,，~～]*$/u;
 
@@ -69,6 +70,12 @@ function cleanFoodName(rawFood) {
   return food;
 }
 
+function isGenericFoodQuestion(food) {
+  const normalizedFood = food.replace(/\s+/gu, "");
+
+  return genericFoodQuestions.has(normalizedFood) || genericFoodQuestionPattern.test(normalizedFood);
+}
+
 function extractRequestedFood(content) {
   for (const pattern of directFoodPatterns) {
     const patternIndex = content.indexOf(pattern);
@@ -80,7 +87,7 @@ function extractRequestedFood(content) {
     const rawFood = content.slice(patternIndex + pattern.length);
     const food = cleanFoodName(rawFood);
 
-    if (food && !genericFoodQuestions.has(food)) {
+    if (food && !isGenericFoodQuestion(food)) {
       return food;
     }
   }
@@ -112,6 +119,7 @@ module.exports = {
   recommendationMoodPool,
   shouldTrigger,
   cleanFoodName,
+  isGenericFoodQuestion,
   extractRequestedFood,
   pickMood,
   pickRandom,

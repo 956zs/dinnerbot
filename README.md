@@ -39,6 +39,8 @@ DISCORD_TOKEN=your_discord_bot_token_here
 
 Discord Developer Portal 的 Bot 設定需要開啟 `Message Content Intent`，Bot 才能讀取一般訊息文字。
 
+Bot 也需要可以新增 reaction，才能在回覆上加上 `❌`。使用者按下自己觸發的 bot 回覆上的 `❌` 時，bot 會刪除該則回覆；伺服器 Administrator 也可以用同一個 reaction 刪除 bot 回覆。這是 bot 刪除自己的訊息，不需要 Manage Messages。若要讓 bot 重啟後仍能判斷舊回覆的觸發者，建議同時給予讀取訊息歷史的權限。
+
 ## Run
 
 ```bash
