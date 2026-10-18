@@ -7,6 +7,7 @@ pub mod clock;
 pub mod config;
 pub mod cooldown;
 pub mod data;
+pub mod discord;
 pub mod intent;
 pub mod ledger;
 pub mod meal;
