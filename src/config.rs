@@ -37,14 +37,20 @@ impl fmt::Debug for Config {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigError {
     MissingToken,
-    Invalid { name: &'static str, expected: &'static str },
+    Invalid {
+        name: &'static str,
+        expected: &'static str,
+    },
 }
 
 impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ConfigError::MissingToken => {
-                write!(f, "missing DISCORD_TOKEN: copy .env.example to .env and set your bot token")
+                write!(
+                    f,
+                    "missing DISCORD_TOKEN: copy .env.example to .env and set your bot token"
+                )
             }
             ConfigError::Invalid { name, expected } => write!(f, "{name} must be {expected}"),
         }
@@ -60,7 +66,11 @@ impl Config {
 
     /// Builds the config from any variable source; used by tests.
     pub fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> Result<Self, ConfigError> {
-        let read = |name: &str| lookup(name).map(|value| value.trim().to_owned()).filter(|value| !value.is_empty());
+        let read = |name: &str| {
+            lookup(name)
+                .map(|value| value.trim().to_owned())
+                .filter(|value| !value.is_empty())
+        };
 
         let token = read("DISCORD_TOKEN").ok_or(ConfigError::MissingToken)?;
 
@@ -134,7 +144,10 @@ mod tests {
     #[test]
     fn missing_or_blank_token_is_an_error() {
         assert_eq!(config(&[]).unwrap_err(), ConfigError::MissingToken);
-        assert_eq!(config(&[("DISCORD_TOKEN", "  ")]).unwrap_err(), ConfigError::MissingToken);
+        assert_eq!(
+            config(&[("DISCORD_TOKEN", "  ")]).unwrap_err(),
+            ConfigError::MissingToken
+        );
     }
 
     #[test]
@@ -165,7 +178,10 @@ mod tests {
             ("DEV_GUILD_ID", "abc"),
         ] {
             let result = config(&[("DISCORD_TOKEN", "abc"), (name, value)]);
-            assert!(matches!(result, Err(ConfigError::Invalid { name: n, .. }) if n == name), "{name}={value}");
+            assert!(
+                matches!(result, Err(ConfigError::Invalid { name: n, .. }) if n == name),
+                "{name}={value}"
+            );
         }
     }
 

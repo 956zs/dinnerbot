@@ -15,18 +15,68 @@ const ALLOWED_SYMBOLS: &[char] = &['-', '&', '\'', '·', '‧', '.', '+'];
 
 /// Words that end the food phrase: whatever follows is a new thought.
 const CUT_WORDS: &[&str] = &[
-    "但是", "但", "可是", "不過", "因為", "所以", "然後", "結果", "不然", "我", "你覺得", "你說", "大家",
+    "但是",
+    "但",
+    "可是",
+    "不過",
+    "因為",
+    "所以",
+    "然後",
+    "結果",
+    "不然",
+    "我",
+    "你覺得",
+    "你說",
+    "大家",
 ];
 
 /// Fillers that may precede the food: "要不要吃個火鍋".
-const LEADING_FILLERS: &[&str] =
-    &["一個", "一碗", "一份", "一頓", "一點", "一些", "一下", "個", "些", "吃"];
+const LEADING_FILLERS: &[&str] = &[
+    "一個", "一碗", "一份", "一頓", "一點", "一些", "一下", "個", "些", "吃",
+];
 
 /// Particles and tags that may follow the food, longest first.
 const TRAILING: &[&str] = &[
-    "怎麼樣", "可不可以", "好不好", "行不行", "比較好", "可以嗎", "看看", "好嗎", "好了", "如何", "怎樣", "行嗎",
-    "才好", "一下", "好呢", "呢", "嗎", "吗", "啊", "阿", "啦", "吧", "呀", "喔", "哦", "耶", "欸", "誒", "勒",
-    "咧", "捏", "嘛", "喇", "齁", "囉", "了", "沒", "没", "過", "好",
+    "怎麼樣",
+    "可不可以",
+    "好不好",
+    "行不行",
+    "比較好",
+    "可以嗎",
+    "看看",
+    "好嗎",
+    "好了",
+    "如何",
+    "怎樣",
+    "行嗎",
+    "才好",
+    "一下",
+    "好呢",
+    "呢",
+    "嗎",
+    "吗",
+    "啊",
+    "阿",
+    "啦",
+    "吧",
+    "呀",
+    "喔",
+    "哦",
+    "耶",
+    "欸",
+    "誒",
+    "勒",
+    "咧",
+    "捏",
+    "嘛",
+    "喇",
+    "齁",
+    "囉",
+    "了",
+    "沒",
+    "没",
+    "過",
+    "好",
 ];
 
 /// Trailing markers meaning the eating already happened: "吃了沒".
@@ -34,16 +84,48 @@ const COMPLETED_MARKERS: &[&str] = &["了", "沒", "没", "過"];
 
 /// Trailing markers that turn the phrase into a question.
 const QUESTION_MARKERS: &[&str] = &[
-    "嗎", "吗", "好嗎", "好不好", "如何", "怎樣", "怎麼樣", "可以嗎", "行嗎", "行不行", "可不可以", "呢",
+    "嗎",
+    "吗",
+    "好嗎",
+    "好不好",
+    "如何",
+    "怎樣",
+    "怎麼樣",
+    "可以嗎",
+    "行嗎",
+    "行不行",
+    "可不可以",
+    "呢",
 ];
 
 /// Separators between options in "火鍋還是拉麵".
-const OPTION_SEPARATORS: &[&str] = &["還是", "或是", "或者", "或", "、", "/", "／", "vs", "VS", "Vs", ",", "，"];
+const OPTION_SEPARATORS: &[&str] = &[
+    "還是", "或是", "或者", "或", "、", "/", "／", "vs", "VS", "Vs", ",", "，",
+];
 
 /// Phrases that ask for a suggestion instead of naming a food.
 const GENERIC_WORDS: &[&str] = &[
-    "什麼", "甚麼", "什么", "啥", "啥子", "蝦米", "哪個", "哪一個", "哪家", "哪間", "哪種", "哪一種", "飯", "東西",
-    "早餐", "午餐", "晚餐", "宵夜", "消夜", "正餐", "大餐",
+    "什麼",
+    "甚麼",
+    "什么",
+    "啥",
+    "啥子",
+    "蝦米",
+    "哪個",
+    "哪一個",
+    "哪家",
+    "哪間",
+    "哪種",
+    "哪一種",
+    "飯",
+    "東西",
+    "早餐",
+    "午餐",
+    "晚餐",
+    "宵夜",
+    "消夜",
+    "正餐",
+    "大餐",
 ];
 
 /// Question words that make a phrase a question rather than a food.
@@ -51,9 +133,39 @@ const QUESTION_WORDS: &[&str] = &["什麼", "甚麼", "什么", "啥", "哪"];
 
 /// Things people "eat" in Chinese idioms or jokes that are not food.
 const NOT_FOOD: &[&str] = &[
-    "藥", "屎", "大便", "土", "虧", "醋", "苦", "苦頭", "軟飯", "閉門羹", "鱉", "癟", "香", "驚", "力", "霸王餐",
-    "紅牌", "黃牌", "子彈", "螺絲", "官司", "罰單", "老本", "草", "空氣", "西北風", "人", "我", "你", "妳", "他",
-    "她", "自己",
+    "藥",
+    "屎",
+    "大便",
+    "土",
+    "虧",
+    "醋",
+    "苦",
+    "苦頭",
+    "軟飯",
+    "閉門羹",
+    "鱉",
+    "癟",
+    "香",
+    "驚",
+    "力",
+    "霸王餐",
+    "紅牌",
+    "黃牌",
+    "子彈",
+    "螺絲",
+    "官司",
+    "罰單",
+    "老本",
+    "草",
+    "空氣",
+    "西北風",
+    "人",
+    "我",
+    "你",
+    "妳",
+    "他",
+    "她",
+    "自己",
 ];
 
 /// Suffixes that mark medicine or worse.
@@ -88,7 +200,10 @@ pub fn clean_food(raw: &str) -> Cleaned {
     }
 
     let mut start = 0;
-    while let Some(filler) = LEADING_FILLERS.iter().find(|filler| text[start..].starts_with(*filler)) {
+    while let Some(filler) = LEADING_FILLERS
+        .iter()
+        .find(|filler| text[start..].starts_with(*filler))
+    {
         start += filler.len();
     }
     text.drain(..start);
@@ -139,7 +254,9 @@ pub fn validate_food(food: &str) -> Result<(), FoodRejection> {
     }
     if QUESTION_WORDS.iter().any(|word| food.contains(word))
         || NOT_FOOD.contains(&food)
-        || NOT_FOOD_SUFFIXES.iter().any(|suffix| food.ends_with(suffix))
+        || NOT_FOOD_SUFFIXES
+            .iter()
+            .any(|suffix| food.ends_with(suffix))
     {
         return Err(FoodRejection::NotFood);
     }
@@ -147,7 +264,9 @@ pub fn validate_food(food: &str) -> Result<(), FoodRejection> {
 }
 
 pub fn has_option_separator(text: &str) -> bool {
-    OPTION_SEPARATORS.iter().any(|separator| text.contains(separator))
+    OPTION_SEPARATORS
+        .iter()
+        .any(|separator| text.contains(separator))
 }
 
 /// Splits "火鍋還是拉麵" (or "火鍋 拉麵") into cleaned, validated, unique options.
@@ -233,13 +352,30 @@ mod tests {
 
     #[test]
     fn clean_handles_empty_input() {
-        assert_eq!(clean_food(""), Cleaned { text: String::new(), completed: false, question: false });
+        assert_eq!(
+            clean_food(""),
+            Cleaned {
+                text: String::new(),
+                completed: false,
+                question: false
+            }
+        );
         assert_eq!(cleaned("   "), "");
     }
 
     #[test]
     fn generic_phrases_are_detected() {
-        for phrase in ["什麼", "啥", "點什麼", "一點什麼東西", "些什麼", "什麼好", "飯", "東西", ""] {
+        for phrase in [
+            "什麼",
+            "啥",
+            "點什麼",
+            "一點什麼東西",
+            "些什麼",
+            "什麼好",
+            "飯",
+            "東西",
+            "",
+        ] {
             assert!(is_generic(phrase), "{phrase} should be generic");
         }
         assert!(!is_generic("火鍋"));
@@ -248,15 +384,35 @@ mod tests {
 
     #[test]
     fn validate_accepts_ordinary_food() {
-        for food in ["火鍋", "牛肉麵", "OREO冰炫風", "Costco熱狗", "85度C", "炸和牛棒球堡"] {
+        for food in [
+            "火鍋",
+            "牛肉麵",
+            "OREO冰炫風",
+            "Costco熱狗",
+            "85度C",
+            "炸和牛棒球堡",
+        ] {
             assert_eq!(validate_food(food), Ok(()), "{food}");
         }
     }
 
     #[test]
     fn validate_rejects_mentions_links_and_markup() {
-        for text in ["@everyone", "<@123456789>", "<#1>", "http://x.y", "**粗體**", "火鍋🍲", "a|b", "`code`"] {
-            assert_eq!(validate_food(text), Err(FoodRejection::UnsafeCharacter), "{text}");
+        for text in [
+            "@everyone",
+            "<@123456789>",
+            "<#1>",
+            "http://x.y",
+            "**粗體**",
+            "火鍋🍲",
+            "a|b",
+            "`code`",
+        ] {
+            assert_eq!(
+                validate_food(text),
+                Err(FoodRejection::UnsafeCharacter),
+                "{text}"
+            );
         }
     }
 
@@ -279,12 +435,22 @@ mod tests {
 
     #[test]
     fn parse_options_splits_and_dedupes() {
-        assert_eq!(parse_options("火鍋還是拉麵"), Ok(vec!["火鍋".to_owned(), "拉麵".to_owned()]));
+        assert_eq!(
+            parse_options("火鍋還是拉麵"),
+            Ok(vec!["火鍋".to_owned(), "拉麵".to_owned()])
+        );
         assert_eq!(
             parse_options("火鍋 拉麵、壽司/火鍋"),
-            Ok(vec!["火鍋".to_owned(), "拉麵".to_owned(), "壽司".to_owned()])
+            Ok(vec![
+                "火鍋".to_owned(),
+                "拉麵".to_owned(),
+                "壽司".to_owned()
+            ])
         );
-        assert_eq!(parse_options("火鍋還是吃拉麵呢"), Ok(vec!["火鍋".to_owned(), "拉麵".to_owned()]));
+        assert_eq!(
+            parse_options("火鍋還是吃拉麵呢"),
+            Ok(vec!["火鍋".to_owned(), "拉麵".to_owned()])
+        );
     }
 
     #[test]
@@ -295,7 +461,10 @@ mod tests {
 
     #[test]
     fn parse_options_rejects_unsafe_parts() {
-        assert_eq!(parse_options("火鍋還是@everyone"), Err(FoodRejection::UnsafeCharacter));
+        assert_eq!(
+            parse_options("火鍋還是@everyone"),
+            Err(FoodRejection::UnsafeCharacter)
+        );
         assert_eq!(parse_options("火鍋還是藥"), Err(FoodRejection::NotFood));
     }
 

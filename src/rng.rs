@@ -165,16 +165,26 @@ pub(crate) mod tests {
     fn pick_handles_empty_and_non_empty() {
         let empty: [u8; 0] = [];
         assert_eq!(pick(&mut ScriptedRng::zeros(), &empty), None);
-        assert_eq!(pick(&mut ScriptedRng::new(vec![u64::MAX]), &[1, 2, 3]), Some(&3));
+        assert_eq!(
+            pick(&mut ScriptedRng::new(vec![u64::MAX]), &[1, 2, 3]),
+            Some(&3)
+        );
     }
 
     #[test]
     fn pick_weighted_respects_weights() {
         let items = [("never", 0), ("a", 1), ("b", 3)];
         let weight = |item: &(&str, u32)| item.1;
-        assert_eq!(pick_weighted(&mut ScriptedRng::zeros(), &items, weight).unwrap().0, "a");
         assert_eq!(
-            pick_weighted(&mut ScriptedRng::new(vec![u64::MAX]), &items, weight).unwrap().0,
+            pick_weighted(&mut ScriptedRng::zeros(), &items, weight)
+                .unwrap()
+                .0,
+            "a"
+        );
+        assert_eq!(
+            pick_weighted(&mut ScriptedRng::new(vec![u64::MAX]), &items, weight)
+                .unwrap()
+                .0,
             "b"
         );
     }

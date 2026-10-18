@@ -13,7 +13,8 @@ pub enum Mood {
 }
 
 /// Verdicts lean positive but can say no.
-const VERDICT_MOODS: [(Mood, u32); 3] = [(Mood::Positive, 5), (Mood::Neutral, 3), (Mood::Negative, 2)];
+const VERDICT_MOODS: [(Mood, u32); 3] =
+    [(Mood::Positive, 5), (Mood::Neutral, 3), (Mood::Negative, 2)];
 
 /// Recommending something and then advising against it would be odd.
 const RECOMMEND_MOODS: [(Mood, u32); 2] = [(Mood::Positive, 1), (Mood::Neutral, 1)];
@@ -55,7 +56,12 @@ pub fn respond(
     }
 }
 
-pub fn recommend(data: &FoodData, meal: Meal, avoid: &[String], rng: &mut impl RandomSource) -> Reply {
+pub fn recommend(
+    data: &FoodData,
+    meal: Meal,
+    avoid: &[String],
+    rng: &mut impl RandomSource,
+) -> Reply {
     let food = data.pick_food(meal, avoid, rng).to_owned();
     let mood = pick_mood(rng, &RECOMMEND_MOODS);
     let template = pick_template(rng, templates(data, mood));
@@ -141,7 +147,10 @@ mod tests {
         .unwrap()
     }
 
-    const ASKER: Asker = Asker { user_id: 42, day: 20_000 };
+    const ASKER: Asker = Asker {
+        user_id: 42,
+        day: 20_000,
+    };
 
     #[test]
     fn recommend_fills_a_positive_or_neutral_template() {
@@ -152,7 +161,10 @@ mod tests {
         let mut rng = SplitMix64::new(3);
         for _ in 0..100 {
             let reply = recommend(&data(), Meal::Dinner, &[], &mut rng);
-            assert!(!reply.text.starts_with("先別吃"), "recommendations never advise against");
+            assert!(
+                !reply.text.starts_with("先別吃"),
+                "recommendations never advise against"
+            );
         }
     }
 
@@ -192,7 +204,13 @@ mod tests {
         assert!(answer.contains("火鍋") || answer.contains("拉麵"));
         assert_eq!(answer, choose(&data, &options, ASKER));
         // Same option set in another order: same chosen food.
-        let chosen = |text: &str| if text.contains("火鍋") { "火鍋" } else { "拉麵" };
+        let chosen = |text: &str| {
+            if text.contains("火鍋") {
+                "火鍋"
+            } else {
+                "拉麵"
+            }
+        };
         assert_eq!(chosen(&answer), chosen(&choose(&data, &reversed, ASKER)));
     }
 
@@ -207,16 +225,29 @@ mod tests {
         let data = data();
         let mut rng = ScriptedRng::zeros();
 
-        let reply = respond(&Intent::Recommend { meal: None }, &data, ASKER, Meal::Lunch, &[], &mut rng);
+        let reply = respond(
+            &Intent::Recommend { meal: None },
+            &data,
+            ASKER,
+            Meal::Lunch,
+            &[],
+            &mut rng,
+        );
         assert!(reply.recommended.is_some());
 
-        let intent = Intent::Judge { food: "火鍋".to_owned(), meal: None };
+        let intent = Intent::Judge {
+            food: "火鍋".to_owned(),
+            meal: None,
+        };
         let reply = respond(&intent, &data, ASKER, Meal::Lunch, &[], &mut rng);
         assert_eq!(reply.text, judge(&data, "火鍋", ASKER));
         assert_eq!(reply.recommended, None);
 
         let options = vec!["火鍋".to_owned(), "拉麵".to_owned()];
-        let intent = Intent::Choose { options: options.clone(), meal: None };
+        let intent = Intent::Choose {
+            options: options.clone(),
+            meal: None,
+        };
         let reply = respond(&intent, &data, ASKER, Meal::Lunch, &[], &mut rng);
         assert_eq!(reply.text, choose(&data, &options, ASKER));
     }

@@ -64,7 +64,10 @@ mod tests {
         let mut cooldown = Cooldown::new(WINDOW);
         let start = Instant::now();
         cooldown.check(1, start).unwrap();
-        assert_eq!(cooldown.check(1, start + Duration::from_secs(1)), Err(Duration::from_secs(2)));
+        assert_eq!(
+            cooldown.check(1, start + Duration::from_secs(1)),
+            Err(Duration::from_secs(2))
+        );
     }
 
     #[test]

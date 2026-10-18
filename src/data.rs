@@ -57,9 +57,15 @@ pub enum DataError {
     EmptyCategory(String),
     NoMeals(String),
     ZeroWeight(String),
-    BadFood { category: String, food: String },
+    BadFood {
+        category: String,
+        food: String,
+    },
     EmptyTemplates(&'static str),
-    BadTemplate { list: &'static str, template: String },
+    BadTemplate {
+        list: &'static str,
+        template: String,
+    },
 }
 
 impl fmt::Display for DataError {
@@ -87,7 +93,8 @@ impl std::error::Error for DataError {}
 impl FoodData {
     /// Parses and validates menu JSON.
     pub fn from_json(json: &str) -> Result<Self, DataError> {
-        let data: FoodData = serde_json::from_str(json).map_err(|error| DataError::Parse(error.to_string()))?;
+        let data: FoodData =
+            serde_json::from_str(json).map_err(|error| DataError::Parse(error.to_string()))?;
         data.validate()?;
         Ok(data)
     }
@@ -133,7 +140,10 @@ impl FoodData {
             if templates.is_empty() {
                 return Err(DataError::EmptyTemplates(list));
             }
-            if let Some(template) = templates.iter().find(|template| !is_valid_template(template)) {
+            if let Some(template) = templates
+                .iter()
+                .find(|template| !is_valid_template(template))
+            {
                 return Err(DataError::BadTemplate {
                     list,
                     template: template.clone(),
@@ -144,7 +154,10 @@ impl FoodData {
     }
 
     pub fn food_count(&self) -> usize {
-        self.categories.iter().map(|category| category.foods.len()).sum()
+        self.categories
+            .iter()
+            .map(|category| category.foods.len())
+            .sum()
     }
 
     /// Picks a food for `meal`: first a category by weight, then a food in it.
@@ -221,7 +234,9 @@ mod tests {
         assert_eq!(data.food_count(), 310);
         for meal in Meal::ALL {
             assert!(
-                data.categories.iter().any(|category| category.meals.contains(&meal)),
+                data.categories
+                    .iter()
+                    .any(|category| category.meals.contains(&meal)),
                 "no category serves {meal:?}"
             );
         }
@@ -238,16 +253,26 @@ mod tests {
     fn rejects_malformed_json() {
         assert!(matches!(FoodData::from_json("{"), Err(DataError::Parse(_))));
         assert!(matches!(FoodData::from_json(""), Err(DataError::Parse(_))));
-        assert!(matches!(with(|v| { v["extra"] = 1.into(); }), Err(DataError::Parse(_))));
         assert!(matches!(
-            with(|v| { v["categories"][0]["meals"][0] = "brunch".into(); }),
+            with(|v| {
+                v["extra"] = 1.into();
+            }),
+            Err(DataError::Parse(_))
+        ));
+        assert!(matches!(
+            with(|v| {
+                v["categories"][0]["meals"][0] = "brunch".into();
+            }),
             Err(DataError::Parse(_))
         ));
     }
 
     #[test]
     fn rejects_structural_problems() {
-        assert_eq!(with(|v| v["categories"] = serde_json::json!([])).unwrap_err(), DataError::NoCategories);
+        assert_eq!(
+            with(|v| v["categories"] = serde_json::json!([])).unwrap_err(),
+            DataError::NoCategories
+        );
         assert!(matches!(
             with(|v| v["categories"][0]["foods"] = serde_json::json!([])),
             Err(DataError::EmptyCategory(_))
@@ -276,7 +301,10 @@ mod tests {
             assert!(
                 matches!(
                     with(|v| v["responses"]["positive"][0] = template.into()),
-                    Err(DataError::BadTemplate { list: "positive", .. })
+                    Err(DataError::BadTemplate {
+                        list: "positive",
+                        ..
+                    })
                 ),
                 "{template}"
             );
@@ -310,6 +338,9 @@ mod tests {
             assert_eq!(data.pick_food(Meal::Breakfast, &avoid, &mut rng), "飯糰");
         }
         // With a single option there is nothing else to pick.
-        assert_eq!(data.pick_food(Meal::Dinner, &["火鍋".to_owned()], &mut rng), "火鍋");
+        assert_eq!(
+            data.pick_food(Meal::Dinner, &["火鍋".to_owned()], &mut rng),
+            "火鍋"
+        );
     }
 }

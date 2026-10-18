@@ -43,7 +43,10 @@ impl ReplyLedger {
     }
 
     pub fn remove_reply(&mut self, reply_id: u64) -> Option<ReplyRecord> {
-        let index = self.records.iter().position(|record| record.reply_id == reply_id)?;
+        let index = self
+            .records
+            .iter()
+            .position(|record| record.reply_id == reply_id)?;
         self.records.remove(index)
     }
 

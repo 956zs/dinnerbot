@@ -17,13 +17,18 @@ pub enum Intent {
     /// "要不要吃火鍋？": give a verdict on one food.
     Judge { food: String, meal: Option<Meal> },
     /// "火鍋還是拉麵？": pick one of the offered options.
-    Choose { options: Vec<String>, meal: Option<Meal> },
+    Choose {
+        options: Vec<String>,
+        meal: Option<Meal>,
+    },
 }
 
 impl Intent {
     pub fn meal(&self) -> Option<Meal> {
         match self {
-            Intent::Recommend { meal } | Intent::Judge { meal, .. } | Intent::Choose { meal, .. } => *meal,
+            Intent::Recommend { meal }
+            | Intent::Judge { meal, .. }
+            | Intent::Choose { meal, .. } => *meal,
         }
     }
 }
@@ -50,7 +55,17 @@ const CLAUSE_SEPARATORS: &[char] = &[
 ];
 
 /// Time words that mean the meal is in the past, so nobody is asking.
-const PAST_MARKERS: &[&str] = &["昨天", "昨晚", "前天", "上次", "上週", "上禮拜", "上星期", "剛剛", "剛才"];
+const PAST_MARKERS: &[&str] = &[
+    "昨天",
+    "昨晚",
+    "前天",
+    "上次",
+    "上週",
+    "上禮拜",
+    "上星期",
+    "剛剛",
+    "剛才",
+];
 
 /// Words right before 吃 that make it a description, not a question:
 /// "你在吃什麼" (progressive), "好吃", "難吃", "小吃".
@@ -69,14 +84,35 @@ const NEGATIONS: &[&str] = &["不要", "不想", "別", "不能", "不該"];
 const MODALS: &[&str] = &["可以", "應該", "該", "要", "不如", "乾脆", "還是", "就"];
 
 const TIME_WORDS: &[&str] = &[
-    "早午餐", "早餐", "早飯", "午餐", "午飯", "晚餐", "晚飯", "宵夜", "消夜", "早上", "中午", "晚上", "今天", "今晚",
-    "明天", "等等", "等一下", "待會兒", "待會", "晚點", "現在",
+    "早午餐",
+    "早餐",
+    "早飯",
+    "午餐",
+    "午飯",
+    "晚餐",
+    "晚飯",
+    "宵夜",
+    "消夜",
+    "早上",
+    "中午",
+    "晚上",
+    "今天",
+    "今晚",
+    "明天",
+    "等等",
+    "等一下",
+    "待會兒",
+    "待會",
+    "晚點",
+    "現在",
 ];
 
 /// Helper verbs that may sit between a time word and 吃: "晚餐要吃".
 const HELPER_VERBS: &[&str] = &["應該", "可以", "打算", "要", "就", "來", "該", "想", "會"];
 
-const PRONOUNS: &[&str] = &["你們", "妳們", "我們", "他們", "大家", "你", "妳", "我", "他", "她", "那就", "那", "所以"];
+const PRONOUNS: &[&str] = &[
+    "你們", "妳們", "我們", "他們", "大家", "你", "妳", "我", "他", "她", "那就", "那", "所以",
+];
 
 /// Parses a message. Returns `None` when the message is not a food question.
 pub fn parse(content: &str) -> Option<Intent> {
@@ -87,7 +123,8 @@ pub fn parse(content: &str) -> Option<Intent> {
 
     let message_meal = Meal::detect(content);
     split_clauses(content).iter().find_map(|clause| {
-        parse_clause(clause).map(|kind| kind.into_intent(Meal::detect(&clause.text).or(message_meal)))
+        parse_clause(clause)
+            .map(|kind| kind.into_intent(Meal::detect(&clause.text).or(message_meal)))
     })
 }
 
@@ -129,7 +166,9 @@ fn parse_clause(clause: &Clause) -> Option<Kind> {
     }
 
     text.match_indices('吃')
-        .find_map(|(index, eat)| parse_eat(&text[..index], &text[index + eat.len()..], clause.asked))
+        .find_map(|(index, eat)| {
+            parse_eat(&text[..index], &text[index + eat.len()..], clause.asked)
+        })
         .or_else(|| parse_meal_choice(&text))
 }
 
@@ -141,7 +180,11 @@ fn parse_eat(before: &str, after: &str, asked: bool) -> Option<Kind> {
 
     // "吃不吃火鍋" or "火鍋吃不吃".
     if let Some(rest) = after.strip_prefix("不吃") {
-        let target = if rest.is_empty() { strip_subject(before) } else { rest };
+        let target = if rest.is_empty() {
+            strip_subject(before)
+        } else {
+            rest
+        };
         return verdict(target);
     }
 
@@ -150,7 +193,8 @@ fn parse_eat(before: &str, after: &str, asked: bool) -> Option<Kind> {
         return None;
     }
 
-    let wants_verdict = asks_for_verdict(before) || (before.is_empty() && (asked || cleaned.question));
+    let wants_verdict =
+        asks_for_verdict(before) || (before.is_empty() && (asked || cleaned.question));
     if cleaned.text.is_empty() {
         // "要不要吃？" with nothing after it: suggest something.
         return wants_verdict.then_some(Kind::Recommend);
@@ -272,7 +316,10 @@ mod tests {
 
     #[test]
     fn keeps_the_original_bots_test_cases() {
-        assert_eq!(parse("好吧說實話我現在其實沒有食慾只是我覺得應該吃些什麼"), recommend(None));
+        assert_eq!(
+            parse("好吧說實話我現在其實沒有食慾只是我覺得應該吃些什麼"),
+            recommend(None)
+        );
         assert_eq!(parse("我覺得應該吃些什麼"), recommend(None));
         assert_eq!(parse("要不要吃火鍋？"), judge("火鍋", None));
         assert_eq!(parse("晚餐吃 拉麵 啊？"), judge("拉麵", Some(Meal::Dinner)));
@@ -282,7 +329,10 @@ mod tests {
     fn named_foods_get_a_verdict() {
         assert_eq!(parse("要不要吃個火鍋"), judge("火鍋", None));
         assert_eq!(parse("要不要去吃麥當勞"), judge("麥當勞", None));
-        assert_eq!(parse("我晚餐吃麥當勞好了"), judge("麥當勞", Some(Meal::Dinner)));
+        assert_eq!(
+            parse("我晚餐吃麥當勞好了"),
+            judge("麥當勞", Some(Meal::Dinner))
+        );
         assert_eq!(parse("今天吃火鍋嗎"), judge("火鍋", None));
         assert_eq!(parse("吃不吃火鍋"), judge("火鍋", None));
         assert_eq!(parse("你火鍋吃不吃"), judge("火鍋", None));
@@ -293,12 +343,18 @@ mod tests {
 
     #[test]
     fn choice_questions_offer_options() {
-        assert_eq!(parse("要不要吃火鍋還是拉麵"), choose(&["火鍋", "拉麵"], None));
+        assert_eq!(
+            parse("要不要吃火鍋還是拉麵"),
+            choose(&["火鍋", "拉麵"], None)
+        );
         assert_eq!(
             parse("宵夜吃鹽酥雞還是滷味或臭豆腐"),
             choose(&["鹽酥雞", "滷味", "臭豆腐"], Some(Meal::LateNight))
         );
-        assert_eq!(parse("晚餐火鍋還是拉麵？"), choose(&["火鍋", "拉麵"], Some(Meal::Dinner)));
+        assert_eq!(
+            parse("晚餐火鍋還是拉麵？"),
+            choose(&["火鍋", "拉麵"], Some(Meal::Dinner))
+        );
         assert_eq!(parse("要不要吃火鍋還是火鍋"), judge("火鍋", None));
     }
 
@@ -370,7 +426,13 @@ mod tests {
 
     #[test]
     fn long_food_names_are_ignored() {
-        assert_eq!(parse(&format!("要不要吃{}", "肉".repeat(text::MAX_FOOD_CHARS + 1))), None);
+        assert_eq!(
+            parse(&format!(
+                "要不要吃{}",
+                "肉".repeat(text::MAX_FOOD_CHARS + 1)
+            )),
+            None
+        );
     }
 
     #[test]
@@ -378,8 +440,14 @@ mod tests {
         assert_eq!(
             split_clauses("吃拉麵？好 啊"),
             vec![
-                Clause { text: "吃拉麵".to_owned(), asked: true },
-                Clause { text: "好啊".to_owned(), asked: false },
+                Clause {
+                    text: "吃拉麵".to_owned(),
+                    asked: true
+                },
+                Clause {
+                    text: "好啊".to_owned(),
+                    asked: false
+                },
             ]
         );
         assert!(split_clauses("？？ ，").is_empty());
