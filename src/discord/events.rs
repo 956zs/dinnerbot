@@ -24,6 +24,16 @@ pub async fn handle(
             deleted_message_id,
             ..
         } => on_message_delete(ctx, state, *channel_id, *deleted_message_id).await,
+        serenity::FullEvent::MessageDeleteBulk {
+            channel_id,
+            multiple_deleted_messages_ids,
+            ..
+        } => {
+            for message_id in multiple_deleted_messages_ids {
+                on_message_delete(ctx, state, *channel_id, *message_id).await?;
+            }
+            Ok(())
+        }
         _ => Ok(()),
     }
 }
@@ -58,11 +68,16 @@ async fn on_message(
         .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(true));
     let reply = message.channel_id.send_message(&ctx.http, builder).await?;
 
-    state.remember_reply(ReplyRecord {
+    let stored = state.remember_reply(ReplyRecord {
         reply_id: reply.id.get(),
         trigger_id: Some(message.id.get()),
         owner_id: message.author.id.get(),
     });
+    if !stored {
+        // The question was deleted while the answer was on its way.
+        reply.delete(&ctx.http).await?;
+        return Ok(());
+    }
     if let Err(error) = reply.react(&ctx.http, dismiss_reaction()).await {
         warn!(%error, "could not add the dismiss reaction");
     }
@@ -131,7 +146,7 @@ async fn on_message_delete(
     message_id: serenity::MessageId,
 ) -> Result<(), Error> {
     // The question is gone, so its answer goes too.
-    if let Some(record) = state.reply_to_deleted(message_id.get()) {
+    if let Some(record) = state.message_deleted(message_id.get()) {
         channel_id
             .delete_message(&ctx.http, serenity::MessageId::new(record.reply_id))
             .await?;
@@ -150,7 +165,8 @@ fn asker_of(message: &serenity::Message) -> Option<u64> {
     }
 }
 
-/// Server admins and anyone who can manage messages may dismiss any reply.
+/// Server admins and anyone who can manage messages in the channel may
+/// dismiss any reply.
 async fn is_moderator(
     ctx: &serenity::Context,
     reaction: &serenity::Reaction,
@@ -178,6 +194,18 @@ async fn is_moderator(
     let Some(guild) = ctx.cache.guild(guild_id) else {
         return false;
     };
-    let permissions = guild.member_permissions(member);
+    // Threads take their permissions from the parent channel.
+    let channel = guild.channels.get(&reaction.channel_id).or_else(|| {
+        guild
+            .threads
+            .iter()
+            .find(|thread| thread.id == reaction.channel_id)
+            .and_then(|thread| thread.parent_id)
+            .and_then(|parent_id| guild.channels.get(&parent_id))
+    });
+    let permissions = match channel {
+        Some(channel) => guild.user_permissions_in(channel, member),
+        None => guild.member_permissions(member),
+    };
     permissions.administrator() || permissions.manage_messages()
 }

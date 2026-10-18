@@ -7,7 +7,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use poise::serenity_prelude as serenity;
-use tracing::info;
+use tracing::{error, info};
 
 use crate::clock::LocalTime;
 use crate::config::Config;
@@ -73,8 +73,10 @@ impl BotState {
         reply.text
     }
 
-    fn remember_reply(&self, record: ReplyRecord) {
-        lock(&self.ledger).insert(record);
+    /// Returns `false` when the question was deleted before the reply was
+    /// stored; the caller should then delete the reply.
+    fn remember_reply(&self, record: ReplyRecord) -> bool {
+        lock(&self.ledger).insert(record)
     }
 
     fn reply_owner(&self, reply_id: u64) -> Option<u64> {
@@ -85,12 +87,9 @@ impl BotState {
         lock(&self.ledger).remove_reply(reply_id);
     }
 
-    /// Handles a deleted message: drops it if it was a reply, and returns the
-    /// reply it triggered, if any, so that reply can be deleted too.
-    fn reply_to_deleted(&self, message_id: u64) -> Option<ReplyRecord> {
-        let mut ledger = lock(&self.ledger);
-        ledger.remove_reply(message_id);
-        ledger.take_by_trigger(message_id)
+    /// See [`ReplyLedger::message_deleted`].
+    fn message_deleted(&self, message_id: u64) -> Option<ReplyRecord> {
+        lock(&self.ledger).message_deleted(message_id)
     }
 }
 
@@ -125,12 +124,20 @@ pub async fn run(config: Config, data: FoodData) -> Result<(), Error> {
         })
         .setup(move |ctx, ready, framework| {
             Box::pin(async move {
+                info!(user = %ready.user.name, guilds = ready.guilds.len(), "logged in");
+                // Chat replies work without slash commands, so a failed
+                // registration is logged instead of stalling the bot.
                 let commands = &framework.options().commands;
-                match dev_guild_id {
-                    Some(guild_id) => poise::builtins::register_in_guild(ctx, commands, guild_id).await?,
-                    None => poise::builtins::register_globally(ctx, commands).await?,
+                let registered = match dev_guild_id {
+                    Some(guild_id) => {
+                        poise::builtins::register_in_guild(ctx, commands, guild_id).await
+                    }
+                    None => poise::builtins::register_globally(ctx, commands).await,
+                };
+                match registered {
+                    Ok(()) => info!("slash commands registered"),
+                    Err(error) => error!(%error, "could not register slash commands"),
                 }
-                info!(user = %ready.user.name, guilds = ready.guilds.len(), "logged in, slash commands registered");
                 Ok(state)
             })
         })

@@ -45,6 +45,7 @@ impl From<MealChoice> for Meal {
 /// Ask the 8-ball what to eat, or whether a food is a good idea
 #[poise::command(
     slash_command,
+    guild_only,
     name_localized("zh-TW", "吃什麼"),
     description_localized("zh-TW", "問 8-Ball 這餐吃什麼，或某樣食物適不適合")
 )]
@@ -61,22 +62,20 @@ pub async fn dinner(
     meal: Option<MealChoice>,
 ) -> Result<(), Error> {
     let meal = meal.map(Meal::from);
-    let intent = match food.as_deref().map(text::clean_food) {
-        None => Intent::Recommend { meal },
-        Some(cleaned) if text::is_generic(&cleaned.text) => Intent::Recommend { meal },
-        Some(cleaned) => match text::parse_options(&cleaned.text) {
-            Ok(mut options) if options.len() == 1 => Intent::Judge {
-                food: options.remove(0),
-                meal,
-            },
-            Ok(options) if (2..=MAX_OPTIONS).contains(&options.len()) => {
-                Intent::Choose { options, meal }
-            }
-            _ => {
-                return reply_privately(ctx, "這個我判斷不了，換個食物名稱試試。只能用文字和數字。")
-                    .await
-            }
+    // Split before cleaning so "火鍋 拉麵" becomes a choice, not one food.
+    let options = text::parse_options(food.as_deref().unwrap_or_default());
+    let intent = match options {
+        // Nothing, "什麼" or "隨便": just pick something.
+        Ok(options) if options.is_empty() => Intent::Recommend { meal },
+        Ok(mut options) if options.len() == 1 => Intent::Judge {
+            food: options.remove(0),
+            meal,
         },
+        Ok(options) if options.len() <= MAX_OPTIONS => Intent::Choose { options, meal },
+        _ => {
+            return reply_privately(ctx, "這個我判斷不了，換個食物名稱試試。只能用文字和數字。")
+                .await
+        }
     };
     send_answer(ctx, &intent).await
 }
@@ -84,6 +83,7 @@ pub async fn dinner(
 /// Let the 8-ball pick one of your options
 #[poise::command(
     slash_command,
+    guild_only,
     name_localized("zh-TW", "幫我選"),
     description_localized("zh-TW", "讓 8-Ball 從你給的選項裡挑一個")
 )]
