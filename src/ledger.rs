@@ -16,7 +16,13 @@ pub struct ReplyRecord {
 pub struct ReplyLedger {
     capacity: usize,
     records: VecDeque<ReplyRecord>,
+    /// Recently deleted messages that had no reply yet. Covers a question
+    /// deleted while its answer was still being sent.
+    deleted: VecDeque<u64>,
 }
+
+/// Deleted message IDs remembered while a reply may still be in flight.
+const DELETED_CAPACITY: usize = 256;
 
 impl ReplyLedger {
     /// A capacity of zero is treated as one.
@@ -25,14 +31,40 @@ impl ReplyLedger {
         Self {
             capacity,
             records: VecDeque::with_capacity(capacity),
+            deleted: VecDeque::with_capacity(DELETED_CAPACITY),
         }
     }
 
-    pub fn insert(&mut self, record: ReplyRecord) {
+    /// Stores a reply. Returns `false` without storing it when its question
+    /// was already deleted, in which case the reply should be removed too.
+    pub fn insert(&mut self, record: ReplyRecord) -> bool {
+        if let Some(trigger_id) = record.trigger_id {
+            if let Some(index) = self.deleted.iter().position(|id| *id == trigger_id) {
+                self.deleted.remove(index);
+                return false;
+            }
+        }
         if self.records.len() == self.capacity {
             self.records.pop_front();
         }
         self.records.push_back(record);
+        true
+    }
+
+    /// Handles a deleted message: forgets it if it was a reply, and returns
+    /// the reply it triggered, if any, so that reply can be deleted too.
+    pub fn message_deleted(&mut self, message_id: u64) -> Option<ReplyRecord> {
+        if self.remove_reply(message_id).is_some() {
+            return None;
+        }
+        let linked = self.take_by_trigger(message_id);
+        if linked.is_none() {
+            if self.deleted.len() == DELETED_CAPACITY {
+                self.deleted.pop_front();
+            }
+            self.deleted.push_back(message_id);
+        }
+        linked
     }
 
     pub fn owner_of(&self, reply_id: u64) -> Option<u64> {
@@ -118,6 +150,45 @@ mod tests {
         assert_eq!(ledger.remove_reply(11), Some(record(11, None, 101)));
         assert_eq!(ledger.remove_reply(11), None);
         assert!(ledger.is_empty());
+    }
+
+    #[test]
+    fn deleting_a_question_returns_its_reply() {
+        let mut ledger = ReplyLedger::new(4);
+        assert!(ledger.insert(record(10, Some(1), 100)));
+        assert_eq!(ledger.message_deleted(1), Some(record(10, Some(1), 100)));
+        assert!(ledger.is_empty());
+    }
+
+    #[test]
+    fn deleting_a_reply_just_forgets_it() {
+        let mut ledger = ReplyLedger::new(4);
+        ledger.insert(record(10, Some(1), 100));
+        assert_eq!(ledger.message_deleted(10), None);
+        assert!(ledger.is_empty());
+        // The reply's ID is not mistaken for a deleted question later.
+        assert!(ledger.insert(record(11, Some(10), 100)));
+    }
+
+    #[test]
+    fn reply_to_an_already_deleted_question_is_refused() {
+        let mut ledger = ReplyLedger::new(4);
+        assert_eq!(ledger.message_deleted(1), None);
+        assert!(!ledger.insert(record(10, Some(1), 100)));
+        assert!(ledger.is_empty());
+        // Only refused once.
+        assert!(ledger.insert(record(11, Some(1), 100)));
+    }
+
+    #[test]
+    fn deleted_ids_are_bounded() {
+        let mut ledger = ReplyLedger::new(4);
+        for id in 0..=DELETED_CAPACITY as u64 {
+            ledger.message_deleted(id);
+        }
+        // The oldest deleted ID was forgotten.
+        assert!(ledger.insert(record(10, Some(0), 100)));
+        assert!(!ledger.insert(record(11, Some(DELETED_CAPACITY as u64), 100)));
     }
 
     #[test]

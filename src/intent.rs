@@ -5,7 +5,7 @@
 //! and the words after it name the food, the options, or a question word.
 
 use crate::meal::Meal;
-use crate::text::{self, MAX_OPTIONS};
+use crate::text::{self, Generic, MAX_OPTIONS};
 
 /// Messages longer than this are conversation, not a dinner question.
 pub const MAX_MESSAGE_CHARS: usize = 120;
@@ -68,48 +68,42 @@ const PAST_MARKERS: &[&str] = &[
 ];
 
 /// Words right before 吃 that make it a description, not a question:
-/// "你在吃什麼" (progressive), "好吃", "難吃", "小吃".
-const NON_QUESTION_BEFORE: &[&str] = &["在", "好", "難", "小"];
+/// "你在吃什麼" (progressive), "好吃", "難吃", "小吃", "你平常都吃什麼" (habit).
+const NON_QUESTION_BEFORE: &[&str] = &["在", "好", "難", "小", "常", "都"];
 
 /// Words right after 吃 that mean the eating is done or is about capacity.
-const NON_QUESTION_AFTER: &[&str] = &["了", "過", "飽", "完", "掉", "到", "下", "得", "光", "不下"];
+#[rustfmt::skip]
+const NON_QUESTION_AFTER: &[&str] = &[
+    "了", "過", "飽", "完", "掉", "到了", "下去", "下肚", "得", "光", "不下", "不完", "不飽",
+];
 
 /// "要不要吃X" style questions always ask for a verdict.
-const CHOICE_QUESTIONS: &[&str] = &["要不要", "該不該", "能不能", "可不可以"];
+const CHOICE_QUESTIONS: &[&str] = &["要不要", "該不該", "能不能", "可不可以", "會不會"];
 
-/// Negations: "不要吃火鍋" is a statement, not a question.
-const NEGATIONS: &[&str] = &["不要", "不想", "別", "不能", "不該"];
+/// Negations: "不要吃火鍋", "我不吃早餐" are statements, not questions.
+#[rustfmt::skip]
+const NEGATIONS: &[&str] = &["不要", "不想", "不能", "不該", "不會", "沒有", "不", "沒", "別"];
 
 /// Modal verbs that turn "吃X" into something worth a verdict.
 const MODALS: &[&str] = &["可以", "應該", "該", "要", "不如", "乾脆", "還是", "就"];
 
-const TIME_WORDS: &[&str] = &[
-    "早午餐",
-    "早餐",
-    "早飯",
-    "午餐",
-    "午飯",
-    "晚餐",
-    "晚飯",
-    "宵夜",
-    "消夜",
-    "早上",
-    "中午",
-    "晚上",
-    "今天",
-    "今晚",
-    "明天",
-    "等等",
-    "等一下",
-    "待會兒",
-    "待會",
-    "晚點",
-    "現在",
+/// Words that name a meal. Only these anchor a choice without 吃.
+#[rustfmt::skip]
+const MEAL_WORDS: &[&str] = &[
+    "早午餐", "早餐", "早飯", "午餐", "午飯", "中餐", "晚餐", "晚飯", "宵夜", "消夜", "今晚",
+];
+
+/// Words for a day or moment that may come before a meal word.
+#[rustfmt::skip]
+const DAY_WORDS: &[&str] = &[
+    "早上", "中午", "晚上", "今天", "明天", "等等", "等一下", "待會兒", "待會", "晚點", "現在",
 ];
 
 /// Helper verbs that may sit between a time word and 吃: "晚餐要吃".
+#[rustfmt::skip]
 const HELPER_VERBS: &[&str] = &["應該", "可以", "打算", "要", "就", "來", "該", "想", "會"];
 
+#[rustfmt::skip]
 const PRONOUNS: &[&str] = &[
     "你們", "妳們", "我們", "他們", "大家", "你", "妳", "我", "他", "她", "那就", "那", "所以",
 ];
@@ -174,12 +168,17 @@ fn parse_clause(clause: &Clause) -> Option<Kind> {
 
 /// Interprets one "吃" given the text before and after it.
 fn parse_eat(before: &str, after: &str, asked: bool) -> Option<Kind> {
-    if ends_with_any(before, NON_QUESTION_BEFORE) || starts_with_any(after, NON_QUESTION_AFTER) {
+    // "在" is progressive, except at the end of "現在".
+    let describes = ends_with_any(before, NON_QUESTION_BEFORE) && !ends_with_any(before, DAY_WORDS);
+    if describes || starts_with_any(after, NON_QUESTION_AFTER) {
         return None;
     }
 
     // "吃不吃火鍋" or "火鍋吃不吃".
     if let Some(rest) = after.strip_prefix("不吃") {
+        if starts_with_any(rest, NON_QUESTION_AFTER) {
+            return None;
+        }
         let target = if rest.is_empty() {
             strip_subject(before)
         } else {
@@ -188,37 +187,49 @@ fn parse_eat(before: &str, after: &str, asked: bool) -> Option<Kind> {
         return verdict(target);
     }
 
+    if is_negated(before) {
+        return None;
+    }
+
     let cleaned = text::clean_food(after);
     if cleaned.completed {
         return None;
     }
 
-    let wants_verdict =
-        asks_for_verdict(before) || (before.is_empty() && (asked || cleaned.question));
+    let question = asked || cleaned.question;
+    let wants_verdict = asks_for_verdict(before) || (before.is_empty() && question);
     if cleaned.text.is_empty() {
-        // "要不要吃？" with nothing after it: suggest something.
-        return wants_verdict.then_some(Kind::Recommend);
+        // "要不要吃？" with nothing after it: suggest something. But "吃很飽"
+        // only looks empty because the comment was cut off.
+        return (wants_verdict && !cleaned.cut).then_some(Kind::Recommend);
     }
-    if text::is_generic(&cleaned.text) {
-        return Some(Kind::Recommend);
+    match text::generic_kind(&cleaned.text) {
+        Some(Generic::Question) => Some(Kind::Recommend),
+        // "要不要吃飯" and "吃飯嗎" ask; "我要去吃飯" does not.
+        Some(Generic::Meal) => {
+            (ends_with_any(before, CHOICE_QUESTIONS) || question).then_some(Kind::Recommend)
+        }
+        None if wants_verdict => verdict(&cleaned.text),
+        None => None,
     }
-    if !wants_verdict {
-        return None;
-    }
-    verdict(&cleaned.text)
 }
 
-/// "晚餐火鍋還是拉麵": a choice question without 吃.
+/// "晚餐火鍋還是拉麵": a choice question without 吃. It needs a meal word up
+/// front and at least one option that looks like a dish, so "今天下雨還是晴天"
+/// stays quiet.
 fn parse_meal_choice(text: &str) -> Option<Kind> {
     if !text::has_option_separator(text) {
         return None;
     }
 
     let rest = strip_prefix_any(text, PRONOUNS);
-    let rest = TIME_WORDS.iter().find_map(|word| rest.strip_prefix(word))?;
+    let rest = strip_prefix_any(rest, DAY_WORDS);
+    let rest = MEAL_WORDS.iter().find_map(|word| rest.strip_prefix(word))?;
     let rest = strip_prefix_any(rest, HELPER_VERBS);
     match verdict(&text::clean_food(rest).text)? {
-        choice @ Kind::Choose(_) => Some(choice),
+        Kind::Choose(options) if options.iter().any(|option| text::looks_like_food(option)) => {
+            Some(Kind::Choose(options))
+        }
         _ => None,
     }
 }
@@ -234,12 +245,16 @@ fn verdict(target: &str) -> Option<Kind> {
     }
 }
 
+fn is_negated(before: &str) -> bool {
+    !ends_with_any(before, CHOICE_QUESTIONS) && ends_with_any(before, NEGATIONS)
+}
+
 /// True when the words before 吃 make this a question about one food.
 fn asks_for_verdict(before: &str) -> bool {
     if ends_with_any(before, CHOICE_QUESTIONS) {
         return true;
     }
-    if ends_with_any(before, NEGATIONS) {
+    if is_negated(before) {
         return false;
     }
     if ends_with_any(before, MODALS) {
@@ -249,7 +264,7 @@ fn asks_for_verdict(before: &str) -> bool {
         .iter()
         .find_map(|verb| before.strip_suffix(verb))
         .unwrap_or(before);
-    ends_with_any(trimmed, TIME_WORDS)
+    ends_with_any(trimmed, MEAL_WORDS) || ends_with_any(trimmed, DAY_WORDS)
 }
 
 /// Removes leading pronouns, time words and helper verbs: "你今天火鍋" -> "火鍋".
@@ -257,7 +272,8 @@ fn strip_subject(text: &str) -> &str {
     let mut rest = text;
     loop {
         let next = strip_prefix_any(rest, PRONOUNS);
-        let next = strip_prefix_any(next, TIME_WORDS);
+        let next = strip_prefix_any(next, DAY_WORDS);
+        let next = strip_prefix_any(next, MEAL_WORDS);
         let next = strip_prefix_any(next, HELPER_VERBS);
         if next.len() == rest.len() {
             return rest;
@@ -408,6 +424,81 @@ mod tests {
         assert_eq!(parse("吃不下了"), None);
         assert_eq!(parse("吃什麼都好"), None);
         assert_eq!(parse("火鍋還是拉麵"), None);
+    }
+
+    /// Inputs from the code review that used to trigger wrongly.
+    #[test]
+    fn review_regressions_stay_quiet() {
+        for message in [
+            // Meal words in statements and negations.
+            "我先去吃飯",
+            "大家吃飯囉",
+            "回家吃飯",
+            "吃飯吧",
+            "我不想吃飯",
+            "我不吃早餐",
+            "減肥不吃晚餐",
+            "不要吃東西",
+            "我不想吃什麼",
+            // Choices without 吃 that are not about food.
+            "今天下雨還是晴天",
+            "晚上看電影還是打球",
+            "今天湖人vs勇士",
+            "你們今天要去還是不去",
+            "晚餐看電影還是打球",
+            // Comments and adverbs mistaken for food.
+            "今天吃很飽",
+            "你到底吃不吃",
+            "你還要吃不吃",
+            "你先吃不吃",
+            "吃不吃得下",
+            "要吃這個嗎",
+            "要吃多少",
+            "要吃幾個",
+            "要不要吃一頓好的",
+            // Invisible filler as the whole food.
+            "要不要吃\u{3164}",
+            // Second review pass.
+            "我要去吃飯",
+            "每天都要吃早餐",
+            "你平常都吃什麼",
+            "應該吃多一點",
+            "要不要吃屁",
+            "要不要吃a.b.c",
+        ] {
+            assert_eq!(parse(message), None, "{message}");
+        }
+    }
+
+    #[test]
+    fn review_regressions_answer_correctly() {
+        assert_eq!(parse("晚餐吃牛排很開心"), judge("牛排", Some(Meal::Dinner)));
+        assert_eq!(
+            parse("今天中午吃便當很好吃"),
+            judge("便當", Some(Meal::Lunch))
+        );
+        assert_eq!(
+            parse("要吃火鍋還是要吃拉麵"),
+            choose(&["火鍋", "拉麵"], None)
+        );
+        assert_eq!(parse("要不要吃火鍋還是不要"), judge("火鍋", None));
+        assert_eq!(parse("現在吃什麼"), recommend(None));
+        assert_eq!(parse("那現在吃什麼"), recommend(None));
+        assert_eq!(parse("現在吃火鍋好嗎"), judge("火鍋", None));
+        assert_eq!(parse("要不要吃下午茶"), judge("下午茶", None));
+        assert_eq!(parse("要不要吃到飽"), judge("吃到飽", None));
+        assert_eq!(parse("要不要吃飯"), recommend(None));
+        assert_eq!(parse("今天要吃飯嗎"), recommend(None));
+        assert_eq!(parse("晚餐吃火鍋好開心"), judge("火鍋", Some(Meal::Dinner)));
+        assert_eq!(parse("吃飯嗎？"), recommend(None));
+        assert_eq!(
+            parse("今天晚餐火鍋還是拉麵"),
+            choose(&["火鍋", "拉麵"], Some(Meal::Dinner))
+        );
+        assert_eq!(
+            parse("今晚火鍋還是燒烤"),
+            choose(&["火鍋", "燒烤"], Some(Meal::Dinner))
+        );
     }
 
     #[test]
