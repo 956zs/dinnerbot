@@ -52,6 +52,20 @@ impl Meal {
             .map(|(_, meal)| meal)
     }
 
+    /// One-letter code used inside button IDs.
+    pub fn code(self) -> char {
+        match self {
+            Meal::Breakfast => 'b',
+            Meal::Lunch => 'l',
+            Meal::Dinner => 'd',
+            Meal::LateNight => 'n',
+        }
+    }
+
+    pub fn from_code(code: char) -> Option<Meal> {
+        Meal::ALL.into_iter().find(|meal| meal.code() == code)
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Meal::Breakfast => "早餐",
@@ -92,6 +106,14 @@ mod tests {
     #[test]
     fn detect_prefers_the_earliest_keyword() {
         assert_eq!(Meal::detect("中午還是晚上"), Some(Meal::Lunch));
+    }
+
+    #[test]
+    fn codes_round_trip() {
+        for meal in Meal::ALL {
+            assert_eq!(Meal::from_code(meal.code()), Some(meal));
+        }
+        assert_eq!(Meal::from_code('x'), None);
     }
 
     #[test]

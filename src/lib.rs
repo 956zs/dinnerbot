@@ -14,4 +14,6 @@ pub mod meal;
 pub mod recent;
 pub mod reply;
 pub mod rng;
+pub mod store;
 pub mod text;
+pub mod vote;

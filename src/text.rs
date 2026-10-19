@@ -236,6 +236,27 @@ fn is_food_char(c: char) -> bool {
             | '\u{00F8}'..='\u{00FF}')
 }
 
+/// Folds text for loose matching: full-width letters and digits become
+/// ASCII, and everything is lowercased. "ＩＫＥＡ", "IKEA" and "ikea" match.
+pub fn fold(text: &str) -> String {
+    text.chars()
+        .map(|c| match c {
+            '\u{FF10}'..='\u{FF19}' | '\u{FF21}'..='\u{FF3A}' | '\u{FF41}'..='\u{FF5A}' => {
+                char::from_u32(u32::from(c) - 0xFEE0).unwrap_or(c)
+            }
+            _ => c,
+        })
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+/// Text made only of food-name characters, 1 to `max_chars` long. Used for
+/// server menus and avoided keywords, which skip the chat-specific checks.
+pub fn is_safe_food_text(text: &str, max_chars: usize) -> bool {
+    let length = text.chars().count();
+    length > 0 && length <= max_chars && text.chars().all(is_food_char)
+}
+
 /// Checks that a cleaned food name is safe and sensible to echo back.
 pub fn validate_food(food: &str) -> Result<(), FoodRejection> {
     if food.is_empty() {
@@ -519,6 +540,24 @@ mod tests {
         assert_eq!(validate_food(&too_long), Err(FoodRejection::TooLong));
         assert_eq!(validate_food(""), Err(FoodRejection::Empty));
         assert_eq!(validate_food("什麼"), Err(FoodRejection::Generic));
+    }
+
+    #[test]
+    fn fold_ignores_case_and_width() {
+        assert_eq!(fold("ＩＫＥＡ肉丸"), "ikea肉丸");
+        assert_eq!(fold("IKEA"), "ikea");
+        assert_eq!(fold("８５度Ｃ"), "85度c");
+        assert_eq!(fold(""), "");
+    }
+
+    #[test]
+    fn safe_food_text_checks_characters_and_length() {
+        assert!(is_safe_food_text("那家牛肉麵", 16));
+        assert!(is_safe_food_text("牛", 1));
+        assert!(!is_safe_food_text("", 16));
+        assert!(!is_safe_food_text("牛肉", 1));
+        assert!(!is_safe_food_text("巷口 牛肉麵", 16));
+        assert!(!is_safe_food_text("@here", 16));
     }
 
     #[test]

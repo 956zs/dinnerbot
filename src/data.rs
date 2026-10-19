@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::meal::Meal;
 use crate::rng::{self, RandomSource};
@@ -15,10 +15,9 @@ const EMBEDDED: &str = include_str!("../data/data.json");
 pub const FOOD_PLACEHOLDER: &str = "{food}";
 
 const MAX_FOOD_DISPLAY_CHARS: usize = 32;
+/// Largest category weight; keeps weight sums far from overflowing.
+pub const MAX_WEIGHT: u32 = 1_000_000;
 const MAX_TEMPLATE_CHARS: usize = 200;
-
-/// How often a recommendation re-rolls to avoid a recently suggested food.
-const AVOID_ATTEMPTS: usize = 8;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -56,7 +55,7 @@ pub enum DataError {
     NoCategories,
     EmptyCategory(String),
     NoMeals(String),
-    ZeroWeight(String),
+    BadWeight(String),
     BadFood {
         category: String,
         food: String,
@@ -75,7 +74,9 @@ impl fmt::Display for DataError {
             DataError::NoCategories => write!(f, "menu data has no categories"),
             DataError::EmptyCategory(name) => write!(f, "category \"{name}\" has no name or no foods"),
             DataError::NoMeals(name) => write!(f, "category \"{name}\" lists no meals"),
-            DataError::ZeroWeight(name) => write!(f, "category \"{name}\" has weight 0"),
+            DataError::BadWeight(name) => {
+                write!(f, "category \"{name}\" needs a weight from 1 to {MAX_WEIGHT}")
+            }
             DataError::BadFood { category, food } => {
                 write!(f, "category \"{category}\" has an unusable food name: {food:?}")
             }
@@ -115,8 +116,8 @@ impl FoodData {
             if category.meals.is_empty() {
                 return Err(DataError::NoMeals(category.name.clone()));
             }
-            if category.weight == 0 {
-                return Err(DataError::ZeroWeight(category.name.clone()));
+            if !(1..=MAX_WEIGHT).contains(&category.weight) {
+                return Err(DataError::BadWeight(category.name.clone()));
             }
             if let Some(food) = category
                 .foods
@@ -160,38 +161,149 @@ impl FoodData {
             .sum()
     }
 
-    /// Picks a food for `meal`: first a category by weight, then a food in it.
+    /// Picks a food: first a pool by weight, then a food in it.
     ///
-    /// Foods in `avoid` are re-rolled a few times so a channel does not see the
-    /// same suggestion twice in a row. Categories that do not serve `meal` are
-    /// skipped unless none do.
-    pub fn pick_food(&self, meal: Meal, avoid: &[String], rng: &mut impl RandomSource) -> &str {
+    /// Built-in categories that do not serve the meal are skipped unless none
+    /// do. Foods containing an avoided keyword are never picked; recently
+    /// suggested foods are skipped while anything else is left. Returns `None`
+    /// only when the avoided keywords rule out everything.
+    pub fn pick_food<'a>(
+        &'a self,
+        rules: &PickRules<'a>,
+        rng: &mut impl RandomSource,
+    ) -> Option<&'a str> {
+        let pools = self.pools(rules);
+        let fresh: Vec<Pool<'a>> = pools
+            .iter()
+            .map(|pool| Pool {
+                weight: pool.weight,
+                foods: pool
+                    .foods
+                    .iter()
+                    .copied()
+                    .filter(|food| !rules.recent.iter().any(|recent| recent == food))
+                    .collect(),
+            })
+            .filter(|pool| !pool.foods.is_empty())
+            .collect();
+        let source = if fresh.is_empty() { &pools } else { &fresh };
+
+        let pool = rng::pick_weighted(rng, source, |pool| pool.weight)?;
+        rng::pick(rng, &pool.foods).copied()
+    }
+
+    fn pools<'a>(&'a self, rules: &PickRules<'a>) -> Vec<Pool<'a>> {
+        let allowed = |food: &&str| !is_avoided(food, rules.avoid);
+
         let serving: Vec<&Category> = self
             .categories
             .iter()
-            .filter(|category| category.meals.contains(&meal))
+            .filter(|category| category.meals.contains(&rules.meal))
             .collect();
-        let candidates: Vec<&Category> = if serving.is_empty() {
+        let categories = if serving.is_empty() {
             self.categories.iter().collect()
         } else {
             serving
         };
+        let mut pools: Vec<Pool<'a>> = categories
+            .into_iter()
+            .map(|category| Pool {
+                weight: category.weight,
+                foods: category
+                    .foods
+                    .iter()
+                    .map(String::as_str)
+                    .filter(allowed)
+                    .collect(),
+            })
+            .filter(|pool| !pool.foods.is_empty())
+            .collect();
 
-        let mut pick = || -> &str {
-            let category = rng::pick_weighted(rng, &candidates, |category| category.weight)
-                .expect("validated data has a category with non-zero weight");
-            rng::pick(rng, &category.foods).expect("validated categories are non-empty")
-        };
-
-        let mut food = pick();
-        for _ in 1..AVOID_ATTEMPTS {
-            if !avoid.iter().any(|recent| recent == food) {
-                break;
+        let custom: Vec<&str> = rules
+            .custom
+            .iter()
+            .map(String::as_str)
+            .filter(allowed)
+            .collect();
+        match rules.mode {
+            MenuMode::BuiltinOnly => {}
+            _ if custom.is_empty() => {}
+            MenuMode::CustomOnly => {
+                pools = vec![Pool {
+                    weight: 1,
+                    foods: custom,
+                }];
             }
-            food = pick();
+            MenuMode::Mixed => {
+                // The server's own foods get as much weight as the whole
+                // built-in menu, so about half of all picks.
+                let builtin: u64 = pools.iter().map(|pool| u64::from(pool.weight)).sum();
+                pools.push(Pool {
+                    weight: u32::try_from(builtin).unwrap_or(u32::MAX).max(1),
+                    foods: custom,
+                });
+            }
         }
-        food
+        pools
     }
+}
+
+/// What a recommendation may draw from.
+#[derive(Debug, Clone, Copy)]
+pub struct PickRules<'a> {
+    pub meal: Meal,
+    /// Foods suggested recently in the channel.
+    pub recent: &'a [String],
+    /// The server's own foods.
+    pub custom: &'a [String],
+    pub mode: MenuMode,
+    /// Keywords the asker avoids, such as "牛" or "辣".
+    pub avoid: &'a [String],
+}
+
+impl PickRules<'_> {
+    /// Only the built-in menu, no history and no preferences.
+    pub fn plain(meal: Meal) -> Self {
+        Self {
+            meal,
+            recent: &[],
+            custom: &[],
+            mode: MenuMode::Mixed,
+            avoid: &[],
+        }
+    }
+}
+
+/// Where recommendations come from in a server.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MenuMode {
+    /// The server's own foods and the built-in menu, about half and half.
+    #[default]
+    Mixed,
+    /// Only the server's own foods (the built-in menu while it has none).
+    CustomOnly,
+    /// Only the built-in menu.
+    BuiltinOnly,
+}
+
+struct Pool<'a> {
+    weight: u32,
+    foods: Vec<&'a str>,
+}
+
+/// The first avoided keyword found in `food`, if any.
+/// Matching ignores case and full-width letters, so "ikea" catches "IKEA肉丸".
+pub fn avoided_keyword<'k>(food: &str, avoid: &'k [String]) -> Option<&'k str> {
+    let food = text::fold(food);
+    avoid
+        .iter()
+        .map(String::as_str)
+        .find(|keyword| !keyword.is_empty() && food.contains(&text::fold(keyword)))
+}
+
+pub fn is_avoided(food: &str, avoid: &[String]) -> bool {
+    avoided_keyword(food, avoid).is_some()
 }
 
 fn is_valid_template(template: &str) -> bool {
@@ -283,7 +395,7 @@ mod tests {
         ));
         assert!(matches!(
             with(|v| v["categories"][0]["weight"] = 0.into()),
-            Err(DataError::ZeroWeight(_))
+            Err(DataError::BadWeight(_))
         ));
     }
 
@@ -311,36 +423,168 @@ mod tests {
         }
     }
 
+    fn strings(items: &[&str]) -> Vec<String> {
+        items.iter().map(|item| (*item).to_owned()).collect()
+    }
+
     #[test]
     fn pick_food_respects_meals() {
         let data = sample();
         let mut rng = SplitMix64::new(7);
         for _ in 0..50 {
-            let breakfast = data.pick_food(Meal::Breakfast, &[], &mut rng);
+            let breakfast = data
+                .pick_food(&PickRules::plain(Meal::Breakfast), &mut rng)
+                .unwrap();
             assert!(["蛋餅", "飯糰"].contains(&breakfast));
-            assert_eq!(data.pick_food(Meal::Dinner, &[], &mut rng), "火鍋");
+            let dinner = data.pick_food(&PickRules::plain(Meal::Dinner), &mut rng);
+            assert_eq!(dinner, Some("火鍋"));
         }
     }
 
     #[test]
     fn pick_food_falls_back_when_no_category_serves_the_meal() {
         let data = sample();
-        let lunch = data.pick_food(Meal::Lunch, &[], &mut ScriptedRng::zeros());
-        assert_eq!(lunch, "蛋餅");
+        let lunch = data.pick_food(&PickRules::plain(Meal::Lunch), &mut ScriptedRng::zeros());
+        assert_eq!(lunch, Some("蛋餅"));
     }
 
     #[test]
-    fn pick_food_avoids_recent_foods_when_possible() {
+    fn pick_food_skips_recent_foods_while_others_remain() {
         let data = sample();
-        let avoid = vec!["蛋餅".to_owned()];
+        let recent = strings(&["蛋餅"]);
+        let rules = PickRules {
+            recent: &recent,
+            ..PickRules::plain(Meal::Breakfast)
+        };
         let mut rng = SplitMix64::new(1);
         for _ in 0..50 {
-            assert_eq!(data.pick_food(Meal::Breakfast, &avoid, &mut rng), "飯糰");
+            assert_eq!(data.pick_food(&rules, &mut rng), Some("飯糰"));
         }
         // With a single option there is nothing else to pick.
-        assert_eq!(
-            data.pick_food(Meal::Dinner, &["火鍋".to_owned()], &mut rng),
-            "火鍋"
+        let recent = strings(&["火鍋"]);
+        let rules = PickRules {
+            recent: &recent,
+            ..PickRules::plain(Meal::Dinner)
+        };
+        assert_eq!(data.pick_food(&rules, &mut rng), Some("火鍋"));
+    }
+
+    #[test]
+    fn pick_food_never_picks_avoided_foods() {
+        let data = sample();
+        let avoid = strings(&["蛋"]);
+        let rules = PickRules {
+            avoid: &avoid,
+            ..PickRules::plain(Meal::Breakfast)
+        };
+        let mut rng = SplitMix64::new(2);
+        for _ in 0..50 {
+            assert_eq!(data.pick_food(&rules, &mut rng), Some("飯糰"));
+        }
+        let avoid = strings(&["火"]);
+        let rules = PickRules {
+            avoid: &avoid,
+            ..PickRules::plain(Meal::Dinner)
+        };
+        assert_eq!(data.pick_food(&rules, &mut rng), None);
+    }
+
+    #[test]
+    fn custom_menu_modes() {
+        let data = sample();
+        let custom = strings(&["巷口牛肉麵"]);
+        let mut rng = SplitMix64::new(3);
+
+        let only = PickRules {
+            custom: &custom,
+            mode: MenuMode::CustomOnly,
+            ..PickRules::plain(Meal::Dinner)
+        };
+        for _ in 0..20 {
+            assert_eq!(data.pick_food(&only, &mut rng), Some("巷口牛肉麵"));
+        }
+
+        let builtin = PickRules {
+            custom: &custom,
+            mode: MenuMode::BuiltinOnly,
+            ..PickRules::plain(Meal::Dinner)
+        };
+        for _ in 0..20 {
+            assert_eq!(data.pick_food(&builtin, &mut rng), Some("火鍋"));
+        }
+
+        let mixed = PickRules {
+            custom: &custom,
+            ..PickRules::plain(Meal::Dinner)
+        };
+        let picks: Vec<&str> = (0..200)
+            .filter_map(|_| data.pick_food(&mixed, &mut rng))
+            .collect();
+        let custom_share = picks.iter().filter(|food| **food == "巷口牛肉麵").count();
+        assert!(
+            (60..=140).contains(&custom_share),
+            "custom share was {custom_share}/200"
         );
+    }
+
+    #[test]
+    fn custom_only_falls_back_when_custom_is_empty_or_avoided() {
+        let data = sample();
+        let rules = PickRules {
+            mode: MenuMode::CustomOnly,
+            ..PickRules::plain(Meal::Dinner)
+        };
+        assert_eq!(
+            data.pick_food(&rules, &mut ScriptedRng::zeros()),
+            Some("火鍋")
+        );
+
+        let custom = strings(&["牛肉麵"]);
+        let avoid = strings(&["牛"]);
+        let rules = PickRules {
+            custom: &custom,
+            avoid: &avoid,
+            mode: MenuMode::CustomOnly,
+            ..PickRules::plain(Meal::Dinner)
+        };
+        assert_eq!(
+            data.pick_food(&rules, &mut ScriptedRng::zeros()),
+            Some("火鍋")
+        );
+    }
+
+    #[test]
+    fn avoided_keyword_reports_the_match() {
+        let avoid = strings(&["牛", "辣"]);
+        assert_eq!(avoided_keyword("麻辣燙", &avoid), Some("辣"));
+        assert_eq!(avoided_keyword("牛肉麵", &avoid), Some("牛"));
+        assert_eq!(avoided_keyword("拉麵", &avoid), None);
+        assert_eq!(avoided_keyword("拉麵", &strings(&[""])), None);
+        assert_eq!(avoided_keyword("拉麵", &[]), None);
+    }
+
+    #[test]
+    fn avoided_keyword_ignores_case_and_width() {
+        assert_eq!(
+            avoided_keyword("IKEA肉丸", &strings(&["ikea"])),
+            Some("ikea")
+        );
+        assert_eq!(
+            avoided_keyword("ikea肉丸", &strings(&["IKEA"])),
+            Some("IKEA")
+        );
+        assert_eq!(
+            avoided_keyword("ＩＫＥＡ肉丸", &strings(&["ikea"])),
+            Some("ikea")
+        );
+    }
+
+    #[test]
+    fn huge_weights_are_rejected() {
+        assert!(matches!(
+            with(|v| v["categories"][0]["weight"] = (MAX_WEIGHT + 1).into()),
+            Err(DataError::BadWeight(_))
+        ));
+        assert!(with(|v| v["categories"][0]["weight"] = MAX_WEIGHT.into()).is_ok());
     }
 }

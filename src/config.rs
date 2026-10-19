@@ -7,6 +7,7 @@ use std::time::Duration;
 const DEFAULT_COOLDOWN_SECS: u64 = 3;
 const MAX_COOLDOWN_SECS: u64 = 3_600;
 const DEFAULT_UTC_OFFSET_HOURS: i32 = 8;
+const DEFAULT_STATE_PATH: &str = "dinnerbot-state.json";
 
 #[derive(Clone)]
 pub struct Config {
@@ -17,6 +18,8 @@ pub struct Config {
     pub utc_offset_seconds: i32,
     /// Optional menu file that replaces the built-in one.
     pub data_path: Option<PathBuf>,
+    /// Where server menus and user preferences are saved.
+    pub state_path: PathBuf,
     /// Register slash commands in this guild only (instant, for testing).
     pub dev_guild_id: Option<u64>,
 }
@@ -29,6 +32,7 @@ impl fmt::Debug for Config {
             .field("cooldown", &self.cooldown)
             .field("utc_offset_seconds", &self.utc_offset_seconds)
             .field("data_path", &self.data_path)
+            .field("state_path", &self.state_path)
             .field("dev_guild_id", &self.dev_guild_id)
             .finish()
     }
@@ -113,6 +117,8 @@ impl Config {
             cooldown: Duration::from_secs(cooldown_secs),
             utc_offset_seconds: utc_offset_hours * 3_600,
             data_path: read("DINNERBOT_DATA").map(PathBuf::from),
+            state_path: read("DINNERBOT_STATE")
+                .map_or_else(|| PathBuf::from(DEFAULT_STATE_PATH), PathBuf::from),
             dev_guild_id,
         })
     }
@@ -138,6 +144,7 @@ mod tests {
         assert_eq!(config.cooldown, Duration::from_secs(3));
         assert_eq!(config.utc_offset_seconds, 8 * 3_600);
         assert_eq!(config.data_path, None);
+        assert_eq!(config.state_path, PathBuf::from("dinnerbot-state.json"));
         assert_eq!(config.dev_guild_id, None);
     }
 
@@ -158,12 +165,17 @@ mod tests {
             ("UTC_OFFSET_HOURS", "-5"),
             ("DINNERBOT_DATA", "/tmp/menu.json"),
             ("DEV_GUILD_ID", "123"),
+            ("DINNERBOT_STATE", "/var/lib/dinnerbot/state.json"),
         ])
         .unwrap();
         assert_eq!(config.cooldown, Duration::ZERO);
         assert_eq!(config.utc_offset_seconds, -5 * 3_600);
         assert_eq!(config.data_path, Some(PathBuf::from("/tmp/menu.json")));
         assert_eq!(config.dev_guild_id, Some(123));
+        assert_eq!(
+            config.state_path,
+            PathBuf::from("/var/lib/dinnerbot/state.json")
+        );
     }
 
     #[test]

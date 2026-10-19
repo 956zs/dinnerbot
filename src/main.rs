@@ -2,6 +2,7 @@ use std::process::ExitCode;
 
 use dinnerbot::config::Config;
 use dinnerbot::data::FoodData;
+use dinnerbot::store::Store;
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
@@ -41,7 +42,16 @@ async fn main() -> ExitCode {
         "menu loaded"
     );
 
-    match dinnerbot::discord::run(config, data).await {
+    // A broken state file stops the bot rather than being overwritten.
+    let store = match Store::open(&config.state_path) {
+        Ok(store) => store,
+        Err(error) => {
+            error!("{error}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    match dinnerbot::discord::run(config, data, store).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             error!("bot stopped: {error}");
