@@ -1,4 +1,4 @@
 /target/
-node_modules/
 .env
-npm-debug.log*
+dinnerbot-state.json
+dinnerbot-state.json.tmp
